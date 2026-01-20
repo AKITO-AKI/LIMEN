@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://limen.local/schemas/session.schema.json",
+  "title": "LIMEN Session",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sessionId", "createdAt", "sourceLanguage", "targetLanguage", "inputSkeleton"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sourceLanguage": {
+      "type": "string",
+      "enum": ["JSL", "ASL", "CSL"]
+    },
+    "targetLanguage": {
+      "type": "string",
+      "enum": ["JSL", "ASL", "CSL"]
+    },
+    "inputSkeleton": { "$ref": "./skeleton.schema.json" },
+    "estimatedMeaning": { "$ref": "./meaning.schema.json" },
+    "outputSkeleton": { "$ref": "./skeleton.schema.json" },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

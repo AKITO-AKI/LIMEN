@@ -1,0 +1,146 @@
+{
+  "schemaVersion": "0.1.0",
+  "sessionId": "session_0001",
+  "createdAt": "2026-01-20T00:00:00Z",
+  "sourceLanguage": "JSL",
+  "targetLanguage": "ASL",
+  "inputSkeleton": {
+    "schemaVersion": "0.1.0",
+    "jointSet": "mediapipe_pose_v1",
+    "coordinateSpace": "normalized",
+    "fps": 30,
+    "meta": {
+      "note": "Example payload for Stage 0"
+    },
+    "frames": [
+      {
+        "t": 0.0,
+        "overallConfidence": 0.92,
+        "joints": {
+          "NOSE": {
+            "x": 0.5,
+            "y": 0.12,
+            "z": -0.1,
+            "confidence": 0.95
+          },
+          "LEFT_WRIST": {
+            "x": 0.35,
+            "y": 0.55,
+            "z": -0.05,
+            "confidence": 0.9
+          },
+          "RIGHT_WRIST": {
+            "x": 0.65,
+            "y": 0.54,
+            "z": -0.05,
+            "confidence": 0.91
+          }
+        }
+      },
+      {
+        "t": 0.033,
+        "overallConfidence": 0.93,
+        "joints": {
+          "NOSE": {
+            "x": 0.5,
+            "y": 0.12,
+            "z": -0.1,
+            "confidence": 0.96
+          },
+          "LEFT_WRIST": {
+            "x": 0.34,
+            "y": 0.54,
+            "z": -0.05,
+            "confidence": 0.9
+          },
+          "RIGHT_WRIST": {
+            "x": 0.66,
+            "y": 0.53,
+            "z": -0.05,
+            "confidence": 0.92
+          }
+        }
+      }
+    ]
+  },
+  "estimatedMeaning": {
+    "schemaVersion": "0.1.0",
+    "sourceLanguage": "JSL",
+    "targetLanguage": "ASL",
+    "intent": "greeting",
+    "params": {
+      "direction": {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0
+      },
+      "intensity": 0.35,
+      "tempo": 0.5,
+      "politeness": 0.8
+    },
+    "confidence": 0.72,
+    "rationale": "Hand motion looks like a casual greeting; moderate tempo; polite."
+  },
+  "outputSkeleton": {
+    "schemaVersion": "0.1.0",
+    "jointSet": "mediapipe_pose_v1",
+    "coordinateSpace": "normalized",
+    "fps": 30,
+    "meta": {
+      "note": "Example payload for Stage 0"
+    },
+    "frames": [
+      {
+        "t": 0.0,
+        "overallConfidence": 0.92,
+        "joints": {
+          "NOSE": {
+            "x": 0.5,
+            "y": 0.12,
+            "z": -0.1,
+            "confidence": 0.95
+          },
+          "LEFT_WRIST": {
+            "x": 0.35,
+            "y": 0.55,
+            "z": -0.05,
+            "confidence": 0.9
+          },
+          "RIGHT_WRIST": {
+            "x": 0.65,
+            "y": 0.54,
+            "z": -0.05,
+            "confidence": 0.91
+          }
+        }
+      },
+      {
+        "t": 0.033,
+        "overallConfidence": 0.93,
+        "joints": {
+          "NOSE": {
+            "x": 0.5,
+            "y": 0.12,
+            "z": -0.1,
+            "confidence": 0.96
+          },
+          "LEFT_WRIST": {
+            "x": 0.34,
+            "y": 0.54,
+            "z": -0.05,
+            "confidence": 0.9
+          },
+          "RIGHT_WRIST": {
+            "x": 0.66,
+            "y": 0.53,
+            "z": -0.05,
+            "confidence": 0.92
+          }
+        }
+      }
+    ]
+  },
+  "meta": {
+    "note": "Example bundle. outputSkeleton is placeholder."
+  }
+}

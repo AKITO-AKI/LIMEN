@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://limen.local/schemas/skeleton.schema.json",
+  "title": "LIMEN Skeleton",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "jointSet", "coordinateSpace", "frames"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "jointSet": {
+      "type": "string",
+      "description": "Which joint naming convention is used for the joints keys.",
+      "enum": [
+        "mediapipe_holistic_v1",
+        "mediapipe_pose_v1",
+        "mediapipe_hands_v1"
+      ]
+    },
+    "coordinateSpace": {
+      "type": "string",
+      "description": "Coordinate space of x/y/z. 'pixel' is image pixels, 'normalized' is 0..1 in image space, 'world' is model-specific world units.",
+      "enum": ["pixel", "normalized", "world"]
+    },
+    "fps": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Capture frames per second (informational)."
+    },
+    "meta": {
+      "type": "object",
+      "description": "Free-form metadata (device hints, app version, etc.).",
+      "additionalProperties": true
+    },
+    "frames": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/frame" }
+    }
+  },
+  "$defs": {
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t", "joints"],
+      "properties": {
+        "t": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Time in seconds since session start."
+        },
+        "overallConfidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Optional overall confidence for this frame."
+        },
+        "joints": {
+          "type": "object",
+          "description": "Dictionary of joint name -> joint position.",
+          "additionalProperties": { "$ref": "#/$defs/joint" }
+        }
+      }
+    },
+    "joint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": {
+          "type": "number",
+          "description": "Optional depth/3D component. For MVP, this may be relative depth (2.5D)."
+        },
+        "visibility": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Model-specific visibility signal (0..1)."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Per-joint confidence (0..1)."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "0.1.0",
+  "sourceLanguage": "JSL",
+  "targetLanguage": "ASL",
+  "intent": "greeting",
+  "params": {
+    "direction": {
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "intensity": 0.35,
+    "tempo": 0.5,
+    "politeness": 0.8
+  },
+  "confidence": 0.72,
+  "rationale": "Hand motion looks like a casual greeting; moderate tempo; polite."
+}
