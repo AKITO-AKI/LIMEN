@@ -9,3 +9,5 @@ __pycache__/
 .venv*/
 .vscode/
 .idea/
+apps/api/data/
+*.db
