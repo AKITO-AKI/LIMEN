@@ -55,3 +55,23 @@ This file records early choices so future changes are intentional.
 ### Q8. Recording UX
 
 - Start → Stop → Save (A). Also show a small REC status chip + frame count + elapsed time.
+
+---
+
+## Stage2 decisions (confirmed)
+
+### S2-1. Recording upper bound
+
+- A: keep ~20s cap for MVP stability.
+
+### S2-2. 3-view playback
+
+- A: fixed Front / Side / Top (no free camera yet).
+
+### S2-3. Export priority
+
+- B: prioritize BVH export first.
+
+### S2-4. BVH base rig
+
+- A: minimal MediaPipe-based humanoid (pose-only) rig for MVP.

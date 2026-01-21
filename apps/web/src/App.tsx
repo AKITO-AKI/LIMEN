@@ -4,6 +4,7 @@ import { SkeletonCanvas } from './components/SkeletonCanvas'
 import { MeaningView } from './components/MeaningView'
 import { InputCapture } from './components/InputCapture'
 import { SessionBrowser } from './components/SessionBrowser'
+import { SessionViewer } from './components/SessionViewer'
 import { dummyMeaning, dummySkeleton } from './lib/dummy'
 import type { Language, Meaning, Skeleton, Session } from './lib/types'
 
@@ -32,9 +33,10 @@ export default function App() {
   const [targetLanguage, setTargetLanguage] = useState<Language>('ASL')
   const [meaning, setMeaning] = useState<Meaning | null>(() => dummyMeaning('JSL', 'ASL'))
   const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<string>('Stage1: camera + pose/hands + session log')
+  const [status, setStatus] = useState<string>('Stage2: replay + 3-view + BVH export')
   const [recorded, setRecorded] = useState<Skeleton | null>(null)
   const [loadedSession, setLoadedSession] = useState<Session | null>(null)
+  const [viewSource, setViewSource] = useState<'recorded' | 'loaded'>('recorded')
 
   const outputSkeleton = useMemo(() => {
     // Stage0: output is dummy. Stage5: Meaning → re-encode skeleton.
@@ -65,12 +67,16 @@ export default function App() {
     }
   }
 
+  const activeSkeleton =
+    viewSource === 'loaded' ? loadedSession?.inputSkeleton ?? null : viewSource === 'recorded' ? recorded : null
+  const activeSessionId = viewSource === 'loaded' ? loadedSession?.sessionId : undefined
+
   return (
     <>
       <header>
         <div className="header-left">
           <div className="title">LIMEN</div>
-          <div className="subtitle">Stage 1 — Input / Meaning / Output</div>
+          <div className="subtitle">Stage 2 — Capture / Replay / Export</div>
         </div>
 
         <div className="toolbar">
@@ -106,28 +112,52 @@ export default function App() {
         <div className="note">{status}</div>
 
         <div className="grid" style={{ marginTop: 10 }}>
-          <Panel title="Input" badge="Stage1: camera + MediaPipe">
+          <Panel title="Input" badge="Stage1: camera + MediaPipe / Stage2: replay">
             <InputCapture
               sourceLanguage={sourceLanguage}
               targetLanguage={targetLanguage}
               apiBase={API_BASE}
-              onRecorded={(s) => setRecorded(s)}
+              onRecorded={(s) => {
+                setRecorded(s)
+                setViewSource('recorded')
+              }}
             />
 
             <div className="split" style={{ marginTop: 10 }}>
               <div>
-                <div className="helper">Recorded (Start→Stop→Save)</div>
-                {recorded ? (
-                  <SkeletonCanvas skeleton={recorded} label="recorded skeleton" />
-                ) : (
-                  <div className="note">No recording yet. Start → Stop to buffer frames.</div>
-                )}
+                <div className="row" style={{ marginBottom: 8, gap: 8 }}>
+                  <div className="helper">Replay / Export</div>
+                  <div className="spacer" />
+                  <button
+                    className={viewSource === 'recorded' ? 'tab active' : 'tab'}
+                    onClick={() => setViewSource('recorded')}
+                    disabled={!recorded}
+                  >
+                    Recorded
+                  </button>
+                  <button
+                    className={viewSource === 'loaded' ? 'tab active' : 'tab'}
+                    onClick={() => setViewSource('loaded')}
+                    disabled={!loadedSession}
+                  >
+                    Loaded
+                  </button>
+                </div>
+
+                <SessionViewer
+                  title={viewSource === 'loaded' ? 'Loaded Session' : 'Recorded Buffer'}
+                  sessionId={activeSessionId}
+                  skeleton={activeSkeleton}
+                  filenameStem={activeSessionId ?? 'recorded'}
+                />
               </div>
+
               <div>
                 <SessionBrowser
                   apiBase={API_BASE}
                   onLoad={(session) => {
                     setLoadedSession(session)
+                    setViewSource('loaded')
                     setStatus(`Loaded session: ${session?.sessionId ?? ''}`)
                   }}
                 />
