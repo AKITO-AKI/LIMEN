@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "0.1.0",
+  "templateId": "example_template_001",
+  "createdAt": "2026-01-21T00:00:00.000Z",
+  "language": "JSL",
+  "intent": "greeting",
+  "params": {
+    "direction": { "x": 0, "y": 0, "z": 1 },
+    "intensity": 0.35,
+    "tempo": 0.50
+  },
+  "sourceSessionId": "example_session_001",
+  "clipStartSec": 1.20,
+  "clipEndSec": 2.40,
+  "keyframes": [
+    {
+      "t": 0.0,
+      "joints": {
+        "POSE_LEFT_WRIST": { "x": 0.32, "y": 0.62, "z": 0.01 },
+        "POSE_RIGHT_WRIST": { "x": 0.68, "y": 0.62, "z": 0.01 }
+      }
+    },
+    {
+      "t": 0.6,
+      "joints": {
+        "POSE_LEFT_WRIST": { "x": 0.30, "y": 0.58, "z": 0.02 },
+        "POSE_RIGHT_WRIST": { "x": 0.70, "y": 0.58, "z": 0.02 }
+      }
+    },
+    {
+      "t": 1.2,
+      "joints": {
+        "POSE_LEFT_WRIST": { "x": 0.33, "y": 0.60, "z": 0.01 },
+        "POSE_RIGHT_WRIST": { "x": 0.67, "y": 0.60, "z": 0.01 }
+      }
+    }
+  ],
+  "skeletonClip": {
+    "schemaVersion": "0.1.0",
+    "jointSet": "mediapipe_pose_hands_v1",
+    "coordinateSpace": "normalized",
+    "fps": 30,
+    "meta": { "note": "Example clip" },
+    "frames": [
+      {
+        "t": 0.0,
+        "overallConfidence": 0.9,
+        "joints": {
+          "POSE_LEFT_WRIST": { "x": 0.32, "y": 0.62, "z": 0.01 },
+          "POSE_RIGHT_WRIST": { "x": 0.68, "y": 0.62, "z": 0.01 }
+        }
+      },
+      {
+        "t": 0.6,
+        "overallConfidence": 0.9,
+        "joints": {
+          "POSE_LEFT_WRIST": { "x": 0.30, "y": 0.58, "z": 0.02 },
+          "POSE_RIGHT_WRIST": { "x": 0.70, "y": 0.58, "z": 0.02 }
+        }
+      },
+      {
+        "t": 1.2,
+        "overallConfidence": 0.9,
+        "joints": {
+          "POSE_LEFT_WRIST": { "x": 0.33, "y": 0.60, "z": 0.01 },
+          "POSE_RIGHT_WRIST": { "x": 0.67, "y": 0.60, "z": 0.01 }
+        }
+      }
+    ]
+  },
+  "bvhText": "HIERARCHY\nROOT Hips\n{\n  OFFSET 0.00 0.00 0.00\n  CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation\n}\nMOTION\nFrames: 1\nFrame Time: 0.0333333\n0 0 0 0 0 0\n"
+}

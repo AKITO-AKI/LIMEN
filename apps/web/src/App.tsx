@@ -5,6 +5,7 @@ import { MeaningView } from './components/MeaningView'
 import { InputCapture } from './components/InputCapture'
 import { SessionBrowser } from './components/SessionBrowser'
 import { SessionViewer } from './components/SessionViewer'
+import { TemplateBrowser } from './components/TemplateBrowser'
 import { dummyMeaning, dummySkeleton } from './lib/dummy'
 import type { Language, Meaning, Skeleton, Session } from './lib/types'
 
@@ -28,15 +29,26 @@ async function estimateMeaningViaApi(args: {
   return await res.json()
 }
 
+type TemplatePayload = {
+  templateId: string
+  createdAt: string
+  language: Language
+  intent: string
+  skeletonClip?: Skeleton
+  bvhText?: string
+}
+
 export default function App() {
   const [sourceLanguage, setSourceLanguage] = useState<Language>('JSL')
   const [targetLanguage, setTargetLanguage] = useState<Language>('ASL')
   const [meaning, setMeaning] = useState<Meaning | null>(() => dummyMeaning('JSL', 'ASL'))
   const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<string>('Stage2: replay + 3-view + BVH export')
+  const [status, setStatus] = useState<string>('Stage3: template studio (BVH primary) + replay/export')
   const [recorded, setRecorded] = useState<Skeleton | null>(null)
   const [loadedSession, setLoadedSession] = useState<Session | null>(null)
-  const [viewSource, setViewSource] = useState<'recorded' | 'loaded'>('recorded')
+  const [loadedTemplate, setLoadedTemplate] = useState<TemplatePayload | null>(null)
+  const [viewSource, setViewSource] = useState<'recorded' | 'loaded' | 'template'>('recorded')
+  const [templateRefresh, setTemplateRefresh] = useState(0)
 
   const outputSkeleton = useMemo(() => {
     // Stage0: output is dummy. Stage5: Meaning → re-encode skeleton.
@@ -52,7 +64,13 @@ export default function App() {
     setBusy(true)
     setStatus('Calling API...')
     try {
-      const inputSkeleton = loadedSession?.inputSkeleton ?? recorded ?? dummySkeleton
+      const inputSkeleton =
+        viewSource === 'loaded'
+          ? loadedSession?.inputSkeleton ?? recorded ?? dummySkeleton
+          : viewSource === 'template'
+            ? loadedTemplate?.skeletonClip ?? recorded ?? dummySkeleton
+            : recorded ?? dummySkeleton
+
       const m = await estimateMeaningViaApi({
         sourceLanguage,
         targetLanguage,
@@ -68,20 +86,37 @@ export default function App() {
   }
 
   const activeSkeleton =
-    viewSource === 'loaded' ? loadedSession?.inputSkeleton ?? null : viewSource === 'recorded' ? recorded : null
-  const activeSessionId = viewSource === 'loaded' ? loadedSession?.sessionId : undefined
+    viewSource === 'loaded'
+      ? loadedSession?.inputSkeleton ?? null
+      : viewSource === 'template'
+        ? loadedTemplate?.skeletonClip ?? null
+        : recorded
+
+  const activeId =
+    viewSource === 'loaded'
+      ? loadedSession?.sessionId
+      : viewSource === 'template'
+        ? loadedTemplate?.templateId
+        : undefined
+
+  const filenameStem =
+    viewSource === 'loaded'
+      ? loadedSession?.sessionId
+      : viewSource === 'template'
+        ? `template_${loadedTemplate?.templateId?.slice(0, 8) ?? 'x'}`
+        : 'recorded'
 
   return (
     <>
       <header>
         <div className="header-left">
           <div className="title">LIMEN</div>
-          <div className="subtitle">Stage 2 — Capture / Replay / Export</div>
+          <div className="subtitle">Stage 3 — Templates / Replay / Export</div>
         </div>
 
         <div className="toolbar">
           <label className="note">
-            Source&nbsp;
+            SRC&nbsp;
             <select value={sourceLanguage} onChange={(e) => setSourceLanguage(e.target.value as Language)}>
               <option value="JSL">JSL</option>
               <option value="ASL">ASL</option>
@@ -90,7 +125,7 @@ export default function App() {
           </label>
 
           <label className="note">
-            Target&nbsp;
+            TGT&nbsp;
             <select value={targetLanguage} onChange={(e) => setTargetLanguage(e.target.value as Language)}>
               <option value="JSL">JSL</option>
               <option value="ASL">ASL</option>
@@ -99,11 +134,11 @@ export default function App() {
           </label>
 
           <button onClick={onDummy} className="primary" disabled={busy}>
-            Dummy Meaning
+            Dummy
           </button>
 
           <button onClick={onApi} disabled={busy}>
-            Estimate Meaning (API)
+            API
           </button>
         </div>
       </header>
@@ -112,7 +147,7 @@ export default function App() {
         <div className="note">{status}</div>
 
         <div className="grid" style={{ marginTop: 10 }}>
-          <Panel title="Input" badge="Stage1: camera + MediaPipe / Stage2: replay">
+          <Panel title="Input" badge="Stage1: capture / Stage2: replay / Stage3: templates">
             <InputCapture
               sourceLanguage={sourceLanguage}
               targetLanguage={targetLanguage}
@@ -133,22 +168,42 @@ export default function App() {
                     onClick={() => setViewSource('recorded')}
                     disabled={!recorded}
                   >
-                    Recorded
+                    REC
                   </button>
                   <button
                     className={viewSource === 'loaded' ? 'tab active' : 'tab'}
                     onClick={() => setViewSource('loaded')}
                     disabled={!loadedSession}
                   >
-                    Loaded
+                    LOAD
+                  </button>
+                  <button
+                    className={viewSource === 'template' ? 'tab active' : 'tab'}
+                    onClick={() => setViewSource('template')}
+                    disabled={!loadedTemplate}
+                  >
+                    TPL
                   </button>
                 </div>
 
                 <SessionViewer
-                  title={viewSource === 'loaded' ? 'Loaded Session' : 'Recorded Buffer'}
-                  sessionId={activeSessionId}
+                  title={
+                    viewSource === 'template'
+                      ? `TPL: ${loadedTemplate?.intent ?? ''}`
+                      : viewSource === 'loaded'
+                        ? 'LOAD Session'
+                        : 'REC Buffer'
+                  }
+                  sessionId={activeId}
                   skeleton={activeSkeleton}
-                  filenameStem={activeSessionId ?? 'recorded'}
+                  filenameStem={filenameStem}
+                  apiBase={API_BASE}
+                  defaultTemplateLanguage={sourceLanguage}
+                  templateSourceKind={viewSource}
+                  onTemplateSaved={() => {
+                    setTemplateRefresh((x) => x + 1)
+                    setStatus('TPL saved')
+                  }}
                 />
               </div>
 
@@ -158,9 +213,21 @@ export default function App() {
                   onLoad={(session) => {
                     setLoadedSession(session)
                     setViewSource('loaded')
-                    setStatus(`Loaded session: ${session?.sessionId ?? ''}`)
+                    setStatus(`LOAD session: ${session?.sessionId ?? ''}`)
                   }}
                 />
+
+                <div style={{ marginTop: 10 }}>
+                  <TemplateBrowser
+                    apiBase={API_BASE}
+                    refreshSignal={templateRefresh}
+                    onLoad={(tpl) => {
+                      setLoadedTemplate(tpl)
+                      setViewSource('template')
+                      setStatus(`LOAD template: ${tpl.templateId.slice(0, 8)}… (${tpl.language} / ${tpl.intent})`)
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </Panel>
@@ -174,9 +241,7 @@ export default function App() {
 
           <Panel title="Output" badge="Stage5: meaning → re-encode">
             <SkeletonCanvas skeleton={outputSkeleton} label="dummy output skeleton" />
-            <div className="helper">
-              Stage0では出力もダミー。Stage5でテンプレ選択＋補正で再構成を入れる。
-            </div>
+            <div className="helper">Stage0では出力もダミー。Stage5でテンプレ選択＋補正で再構成を入れる。</div>
           </Panel>
         </div>
       </main>

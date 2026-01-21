@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+import uuid
 from typing import Any, Dict, List, Optional
 
 
@@ -13,6 +14,8 @@ DB_PATH = os.environ.get("LIMEN_DB_PATH", _default_db_path())
 
 
 def ensure_db() -> None:
+    """Create required tables if missing."""
+
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -28,6 +31,31 @@ def ensure_db() -> None:
               payload_json TEXT NOT NULL
             )
             """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS templates (
+              template_id TEXT PRIMARY KEY,
+              created_at TEXT,
+              language TEXT,
+              intent TEXT,
+              duration_sec REAL,
+              keyframes_count INTEGER,
+              source_session_id TEXT,
+              clip_start_sec REAL,
+              clip_end_sec REAL,
+              payload_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at);"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_templates_created_at ON templates(created_at);"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_templates_language_intent ON templates(language, intent);"
         )
         conn.commit()
     finally:
@@ -51,8 +79,7 @@ def save_session(payload: Dict[str, Any]) -> str:
 
     # Derive light metadata for listing.
     frames = (
-        payload.get("inputSkeleton", {})
-        .get("frames", [])
+        payload.get("inputSkeleton", {}).get("frames", [])
         if isinstance(payload.get("inputSkeleton"), dict)
         else []
     )
@@ -138,6 +165,159 @@ def get_session(session_id: str) -> Optional[Dict[str, Any]]:
         cur = conn.execute(
             "SELECT payload_json FROM sessions WHERE session_id=?",
             (session_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return None
+    finally:
+        conn.close()
+
+
+# --- Templates (Stage3) ---
+
+
+def save_template(payload: Dict[str, Any]) -> str:
+    """Insert or replace a template payload.
+
+    Expected shape is flexible, but should include:
+      - language (e.g. JSL/ASL/CSL)
+      - intent
+      - clipStartSec / clipEndSec
+      - keyframes (array)
+      - skeletonClip (object)
+      - bvhText (string)
+    """
+
+    template_id = str(payload.get("templateId") or "").strip()
+    if not template_id:
+        template_id = uuid.uuid4().hex
+        payload["templateId"] = template_id
+
+    created_at = str(payload.get("createdAt") or "")
+    language = str(payload.get("language") or "")
+    intent = str(payload.get("intent") or "")
+
+    clip_start = payload.get("clipStartSec")
+    clip_end = payload.get("clipEndSec")
+    try:
+        clip_start_sec = float(clip_start) if clip_start is not None else 0.0
+    except Exception:
+        clip_start_sec = 0.0
+    try:
+        clip_end_sec = float(clip_end) if clip_end is not None else 0.0
+    except Exception:
+        clip_end_sec = 0.0
+
+    duration_sec = max(0.0, clip_end_sec - clip_start_sec)
+
+    keyframes = payload.get("keyframes")
+    keyframes_count = int(len(keyframes)) if isinstance(keyframes, list) else 0
+
+    source_session_id = str(payload.get("sourceSessionId") or "")
+
+    payload2 = dict(payload)
+    payload2["templateId"] = template_id
+    raw = json.dumps(payload2, ensure_ascii=False, separators=(",", ":"))
+
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO templates (
+              template_id, created_at, language, intent,
+              duration_sec, keyframes_count,
+              source_session_id, clip_start_sec, clip_end_sec,
+              payload_json
+            ) VALUES (?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(template_id) DO UPDATE SET
+              created_at=excluded.created_at,
+              language=excluded.language,
+              intent=excluded.intent,
+              duration_sec=excluded.duration_sec,
+              keyframes_count=excluded.keyframes_count,
+              source_session_id=excluded.source_session_id,
+              clip_start_sec=excluded.clip_start_sec,
+              clip_end_sec=excluded.clip_end_sec,
+              payload_json=excluded.payload_json
+            """,
+            (
+                template_id,
+                created_at,
+                language,
+                intent,
+                duration_sec,
+                keyframes_count,
+                source_session_id,
+                clip_start_sec,
+                clip_end_sec,
+                raw,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return template_id
+
+
+def list_templates(limit: int = 50, offset: int = 0, language: str = "") -> List[Dict[str, Any]]:
+    limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
+
+    conn = _conn()
+    try:
+        if language:
+            cur = conn.execute(
+                """
+                SELECT template_id, created_at, language, intent,
+                       duration_sec, keyframes_count, source_session_id
+                FROM templates
+                WHERE language=?
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT ? OFFSET ?
+                """,
+                (language, limit, offset),
+            )
+        else:
+            cur = conn.execute(
+                """
+                SELECT template_id, created_at, language, intent,
+                       duration_sec, keyframes_count, source_session_id
+                FROM templates
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT ? OFFSET ?
+                """,
+                (limit, offset),
+            )
+
+        items: List[Dict[str, Any]] = []
+        for row in cur.fetchall():
+            items.append(
+                {
+                    "templateId": row[0],
+                    "createdAt": row[1],
+                    "language": row[2],
+                    "intent": row[3],
+                    "durationSec": row[4],
+                    "keyframesCount": row[5],
+                    "sourceSessionId": row[6],
+                }
+            )
+        return items
+    finally:
+        conn.close()
+
+
+def get_template(template_id: str) -> Optional[Dict[str, Any]]:
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            "SELECT payload_json FROM templates WHERE template_id=?",
+            (template_id,),
         )
         row = cur.fetchone()
         if not row:

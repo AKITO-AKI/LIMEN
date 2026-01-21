@@ -392,3 +392,17 @@ main {
   min-width: 180px;
   height: 26px;
 }
+
+/* Stage3 additions */
+
+.template-panel {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px dashed rgba(124, 58, 237, 0.35);
+  border-radius: 14px;
+  background: rgba(124, 58, 237, 0.04);
+}
+
+.template-panel .primary {
+  height: 34px;
+}

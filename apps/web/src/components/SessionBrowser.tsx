@@ -62,7 +62,7 @@ export function SessionBrowser(props: {
   return (
     <div className="session-browser">
       <div className="session-header">
-        <div className="session-title">Saved Sessions</div>
+        <div className="session-title">Sessions</div>
         <div className="spacer" />
         <button onClick={refresh} disabled={busy}>
           Refresh
