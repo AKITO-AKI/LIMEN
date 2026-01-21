@@ -129,6 +129,101 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v))
 }
 
+
+// Build a stable rotation from two reference directions (reduces twist jitter for shoulders/torso).
+function buildBasis(a0: Vec3, b0: Vec3): { x: Vec3; y: Vec3; z: Vec3; ok: boolean } {
+  const x = norm(a0)
+  if (len(x) < 1e-6) return { x: v(0, 0, 0), y: v(0, 0, 0), z: v(0, 0, 0), ok: false }
+
+  // Orthogonalize b against x (Gram-Schmidt)
+  const bProj = mul(x, dot(b0, x))
+  let y = sub(b0, bProj)
+  y = norm(y)
+  if (len(y) < 1e-6) return { x, y: v(0, 0, 0), z: v(0, 0, 0), ok: false }
+
+  const z = norm(cross(x, y))
+  // Recompute y to enforce orthonormality
+  const y2 = cross(z, x)
+  return { x, y: y2, z, ok: true }
+}
+
+function quatFromMat3(
+  m00: number,
+  m01: number,
+  m02: number,
+  m10: number,
+  m11: number,
+  m12: number,
+  m20: number,
+  m21: number,
+  m22: number
+): Quat {
+  const tr = m00 + m11 + m22
+  let x = 0,
+    y = 0,
+    z = 0,
+    w = 1
+
+  if (tr > 0) {
+    const s = Math.sqrt(tr + 1.0) * 2 // s=4*w
+    w = 0.25 * s
+    x = (m21 - m12) / s
+    y = (m02 - m20) / s
+    z = (m10 - m01) / s
+  } else if (m00 > m11 && m00 > m22) {
+    const s = Math.sqrt(1.0 + m00 - m11 - m22) * 2 // s=4*x
+    w = (m21 - m12) / s
+    x = 0.25 * s
+    y = (m01 + m10) / s
+    z = (m02 + m20) / s
+  } else if (m11 > m22) {
+    const s = Math.sqrt(1.0 + m11 - m00 - m22) * 2 // s=4*y
+    w = (m02 - m20) / s
+    x = (m01 + m10) / s
+    y = 0.25 * s
+    z = (m12 + m21) / s
+  } else {
+    const s = Math.sqrt(1.0 + m22 - m00 - m11) * 2 // s=4*z
+    w = (m10 - m01) / s
+    x = (m02 + m20) / s
+    y = (m12 + m21) / s
+    z = 0.25 * s
+  }
+
+  return qNormalize({ x, y, z, w })
+}
+
+function quatFromBasis(restA: Vec3, restB: Vec3, currA: Vec3, currB: Vec3): Quat {
+  const r = buildBasis(restA, restB)
+  const c = buildBasis(currA, currB)
+
+  if (!r.ok || !c.ok) {
+    return quatFromTwoVectors(restA, currA)
+  }
+
+  // R = C * R^T  (both are orthonormal bases; columns are axis vectors)
+  const rx = r.x,
+    ry = r.y,
+    rz = r.z
+  const cx = c.x,
+    cy = c.y,
+    cz = c.z
+
+  const m00 = cx.x * rx.x + cy.x * ry.x + cz.x * rz.x
+  const m01 = cx.x * rx.y + cy.x * ry.y + cz.x * rz.y
+  const m02 = cx.x * rx.z + cy.x * ry.z + cz.x * rz.z
+
+  const m10 = cx.y * rx.x + cy.y * ry.x + cz.y * rz.x
+  const m11 = cx.y * rx.y + cy.y * ry.y + cz.y * rz.y
+  const m12 = cx.y * rx.z + cy.y * ry.z + cz.y * rz.z
+
+  const m20 = cx.z * rx.x + cy.z * ry.x + cz.z * rz.x
+  const m21 = cx.z * rx.y + cy.z * ry.y + cz.z * rz.y
+  const m22 = cx.z * rx.z + cy.z * ry.z + cz.z * rz.z
+
+  return quatFromMat3(m00, m01, m02, m10, m11, m12, m20, m21, m22)
+}
+
 // ---- MediaPipe BVH rig (Stage2+) ----
 // Base: pose-only minimal humanoid (S2-4A)
 // Extension: add hand/finger joints (S2-5A)
@@ -504,14 +599,47 @@ export function skeletonToBVH(skeleton: Skeleton, opts?: { fps?: number; scale?:
         continue
       }
 
-      const restV = sub(rest[child], rest[joint])
-      const currV = sub(pos[child], pos[joint])
+      // Special cases: use two reference directions to stabilize torso + shoulder twist.
+      const parentInv = qInv(parentQ)
+      let ql: Quat | null = null
 
-      // bring current vector into parent local frame
-      const currVParent = qRotate(qInv(parentQ), currV)
-      const restVParent = restV // rest pose uses identity frames
+      if (joint === 'Spine') {
+        const restA = sub(rest['Chest'], rest['Spine'])
+        const restB = sub(rest['RightShoulder'], rest['LeftShoulder'])
+        const currA = qRotate(parentInv, sub(pos['Chest'], pos['Spine']))
+        const currB = qRotate(parentInv, sub(pos['RightShoulder'], pos['LeftShoulder']))
+        ql = quatFromBasis(restA, restB, currA, currB)
+      } else if (joint === 'Chest') {
+        const restA = sub(rest['Neck'], rest['Chest'])
+        const restB = sub(rest['RightShoulder'], rest['LeftShoulder'])
+        const currA = qRotate(parentInv, sub(pos['Neck'], pos['Chest']))
+        const currB = qRotate(parentInv, sub(pos['RightShoulder'], pos['LeftShoulder']))
+        ql = quatFromBasis(restA, restB, currA, currB)
+      } else if (joint === 'LeftShoulder') {
+        const restA = sub(rest['LeftElbow'], rest['LeftShoulder'])
+        const restB = sub(rest['Chest'], rest['LeftShoulder']) // torso pole
+        const currA = qRotate(parentInv, sub(pos['LeftElbow'], pos['LeftShoulder']))
+        const currB = qRotate(parentInv, sub(pos['Chest'], pos['LeftShoulder']))
+        ql = quatFromBasis(restA, restB, currA, currB)
+      } else if (joint === 'RightShoulder') {
+        const restA = sub(rest['RightElbow'], rest['RightShoulder'])
+        const restB = sub(rest['Chest'], rest['RightShoulder']) // torso pole
+        const currA = qRotate(parentInv, sub(pos['RightElbow'], pos['RightShoulder']))
+        const currB = qRotate(parentInv, sub(pos['Chest'], pos['RightShoulder']))
+        ql = quatFromBasis(restA, restB, currA, currB)
+      }
 
-      const ql = quatFromTwoVectors(restVParent, currVParent)
+      if (!ql) {
+        const restV = sub(rest[child], rest[joint])
+        const currV = sub(pos[child], pos[joint])
+
+        // bring current vector into parent local frame
+        const currVParent = qRotate(parentInv, currV)
+        const restVParent = restV // rest pose uses identity frames
+
+        ql = quatFromTwoVectors(restVParent, currVParent)
+      }
+
       qLocal[joint] = ql
       qGlobal[joint] = qMul(parentQ, ql)
     }

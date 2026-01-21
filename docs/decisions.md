@@ -79,3 +79,11 @@ This file records early choices so future changes are intentional.
 ### S2-5. BVH hands
 
 - A: include hands/fingers in BVH using MediaPipe hand landmarks (aligned to pose wrists).
+
+
+### S2-6. Arm base (shoulder) rotation stability
+
+- Improve shoulder + torso rotation estimation in BVH export by using a two-axis basis:
+  - Torso (Spine/Chest): up axis + shoulder-line axis
+  - Shoulders: arm direction + torso-pole axis (shoulder → chest)
+- Goal: reduce twist jitter and make arm-root motion look more natural in BVH.

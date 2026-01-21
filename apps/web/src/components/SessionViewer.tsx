@@ -162,7 +162,7 @@ export function SessionViewer(props: {
 
           <div className="helper">
             3-view is fixed (Front/Side/Top). BVH export is a minimal MediaPipe-based rig (MVP). Hands/fingers are included
-            using MediaPipe hand landmarks.
+            using MediaPipe hand landmarks. Shoulder/torso rotations use a 2-axis basis to reduce twist jitter.
           </div>
         </>
       )}
