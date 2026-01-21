@@ -50,6 +50,15 @@ export function MeaningView(props: { meaning: Meaning | null }) {
       </div>
 
       <div className="helper">{m.rationale ?? '—'}</div>
+
+      {m.debug && Object.keys(m.debug).length ? (
+        <details style={{ marginTop: 10 }}>
+          <summary className="muted">details</summary>
+          <pre className="mono" style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>
+            {JSON.stringify(m.debug, null, 2)}
+          </pre>
+        </details>
+      ) : null}
     </>
   )
 }

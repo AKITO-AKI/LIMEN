@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "0.1.0",
+  "intents": [
+    "greeting",
+    "introduce_self",
+    "thanks",
+    "sorry",
+    "help",
+    "request",
+    "slow_down",
+    "where",
+    "warning",
+    "yes",
+    "no"
+  ]
+}

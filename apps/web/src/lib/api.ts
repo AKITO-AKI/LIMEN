@@ -12,6 +12,11 @@ export type RunPayload = {
   features: FeatureSummary
   meaning: Meaning
   outputSkeleton?: Skeleton
+  // Stage6+: transparency for non-success paths too.
+  result?: {
+    status: 'ok' | 'blocked' | 'error'
+    reason?: string
+  }
 }
 
 async function j(url: string, init?: RequestInit) {

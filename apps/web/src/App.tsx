@@ -50,6 +50,14 @@ export default function App() {
 
   const canRun = !!consent && !!features && !!inputSkeleton
 
+  async function saveRunSafe(payload: any) {
+    try {
+      await apiRunSave(API_BASE, payload)
+    } catch {
+      // non-fatal
+    }
+  }
+
   async function runPipeline() {
     if (!features) return
     setStatus({ kind: 'busy', text: 'Meaning…' })
@@ -65,15 +73,38 @@ export default function App() {
       })
       setMeaning(m)
 
+      const runBase = {
+        schemaVersion: '0.1.0',
+        createdAt: nowISO(),
+        sourceLanguage,
+        targetLanguage,
+        sourceSessionId: activeSessionId,
+        features,
+        meaning: m
+      }
+
       if (!canProceedMeaning(m)) {
-        setStatus({ kind: 'ok', text: `Low confidence (${Math.round(m.confidence * 100)}%). Re-record recommended.` })
+        const reason = m.intent === 'unknown' ? 'UNKNOWN_INTENT' : 'LOW_CONFIDENCE'
+        const text =
+          m.intent === 'unknown'
+            ? 'BLOCKED: unknown intent'
+            : `BLOCKED: low conf (${Math.round(m.confidence * 100)}%)`
+        setStatus({ kind: 'ok', text })
+        await saveRunSafe({
+          ...runBase,
+          result: { status: 'blocked', reason }
+        })
         return
       }
 
       setStatus({ kind: 'busy', text: 'Template…' })
       const templateId = await apiTemplateFind(API_BASE, targetLanguage, m.intent)
       if (!templateId) {
-        setStatus({ kind: 'error', text: `No template for ${targetLanguage}/${m.intent}` })
+        setStatus({ kind: 'error', text: `BLOCKED: no tpl (${targetLanguage}/${m.intent})` })
+        await saveRunSafe({
+          ...runBase,
+          result: { status: 'blocked', reason: `NO_TEMPLATE:${targetLanguage}/${m.intent}` }
+        })
         return
       }
       setSelectedTemplateId(templateId)
@@ -82,6 +113,11 @@ export default function App() {
       const tplClip = tpl?.skeletonClip as Skeleton | undefined
       if (!tplClip || !tplClip.frames || tplClip.frames.length === 0) {
         setStatus({ kind: 'error', text: 'Template is missing skeletonClip' })
+        await saveRunSafe({
+          ...runBase,
+          selectedTemplateId: templateId,
+          result: { status: 'error', reason: 'TEMPLATE_INVALID' }
+        })
         return
       }
 
@@ -91,21 +127,12 @@ export default function App() {
 
       // Stage6: store run log for transparency.
       setStatus({ kind: 'busy', text: 'Saving run…' })
-      try {
-        await apiRunSave(API_BASE, {
-          schemaVersion: '0.1.0',
-          createdAt: nowISO(),
-          sourceLanguage,
-          targetLanguage,
-          sourceSessionId: activeSessionId,
-          selectedTemplateId: templateId,
-          features,
-          meaning: m,
-          outputSkeleton: rec.skeleton
-        })
-      } catch {
-        // non-fatal
-      }
+      await saveRunSafe({
+        ...runBase,
+        selectedTemplateId: templateId,
+        outputSkeleton: rec.skeleton,
+        result: { status: 'ok' }
+      })
 
       setStatus({ kind: 'ok', text: `OK: ${m.intent} (${Math.round(m.confidence * 100)}%)` })
     } catch (e: any) {
@@ -125,10 +152,18 @@ export default function App() {
   function onLoadRun(payload: any) {
     const m = payload?.meaning as Meaning | undefined
     const out = payload?.outputSkeleton as Skeleton | undefined
+    const res = payload?.result as any
     if (m) setMeaning(m)
     if (out) setOutputSkeleton(out)
     setSelectedTemplateId(payload?.selectedTemplateId ?? null)
-    setStatus({ kind: 'ok', text: `Run loaded: ${String(payload?.runId).slice(0, 8)}` })
+    const id = String(payload?.runId).slice(0, 8)
+    if (res?.status === 'blocked') {
+      setStatus({ kind: 'ok', text: `Run: BLOCKED (${String(res?.reason || '').slice(0, 24)})` })
+    } else if (res?.status === 'error') {
+      setStatus({ kind: 'error', text: `Run: ERROR (${String(res?.reason || '').slice(0, 24)})` })
+    } else {
+      setStatus({ kind: 'ok', text: `Run loaded: ${id}` })
+    }
   }
 
   function acceptConsent() {

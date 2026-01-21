@@ -38,22 +38,28 @@ export type MeaningParams = {
   politeness: number
 }
 
+// Intent IDs are currently fixed to 11 for MVP, but we keep this type extensible
+// so the specialized model can introduce new intents later without breaking builds.
+export type IntentId =
+  | 'greeting'
+  | 'introduce_self'
+  | 'thanks'
+  | 'sorry'
+  | 'help'
+  | 'request'
+  | 'slow_down'
+  | 'where'
+  | 'warning'
+  | 'yes'
+  | 'no'
+  | 'unknown'
+  | (string & {})
+
 export type Meaning = {
   schemaVersion: string
   sourceLanguage: Language
   targetLanguage: Language
-  intent:
-    | 'greeting'
-    | 'introduce_self'
-    | 'thanks'
-    | 'sorry'
-    | 'help'
-    | 'request'
-    | 'slow_down'
-    | 'where'
-    | 'warning'
-    | 'yes'
-    | 'no'
+  intent: IntentId
   params: MeaningParams
   confidence: number
   rationale?: string

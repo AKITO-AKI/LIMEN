@@ -54,10 +54,13 @@ export function RunBrowser(props: {
           <button key={it.runId} className="session-item" onClick={() => onClick(it.runId)} disabled={busy}>
             <div className="row">
               <span className="mono">{String(it.runId).slice(0, 8)}</span>
+              {it.status ? <span className="chip">{String(it.status).toUpperCase()}</span> : null}
               <span className="chip">{it.intent || '—'}</span>
               <span className="chip">{Math.round((it.confidence || 0) * 100)}%</span>
             </div>
-            <div className="muted">{it.createdAt}</div>
+            <div className="muted">
+              {it.createdAt}{it.reason ? ` · ${String(it.reason).slice(0, 48)}` : ''}
+            </div>
           </button>
         ))}
 

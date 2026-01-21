@@ -152,5 +152,6 @@ export function reconstructFromTemplate(templateClip: Skeleton, params: MeaningP
 
 export function canProceedMeaning(m: Meaning | null, minConfidence = 0.55) {
   if (!m) return false
+  if (m.intent === 'unknown') return false
   return Number.isFinite(m.confidence) && m.confidence >= minConfidence
 }

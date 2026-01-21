@@ -452,7 +452,8 @@ def list_runs(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
             """
             SELECT run_id, created_at, source_language, target_language,
                    source_session_id, selected_template_id,
-                   intent, confidence
+                   intent, confidence,
+                   payload_json
             FROM runs
             ORDER BY created_at DESC, rowid DESC
             LIMIT ? OFFSET ?
@@ -461,6 +462,16 @@ def list_runs(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
         )
         items: List[Dict[str, Any]] = []
         for row in cur.fetchall():
+            status = ""
+            reason = ""
+            try:
+                payload = json.loads(row[8]) if row[8] else {}
+                res = payload.get("result") if isinstance(payload, dict) else None
+                if isinstance(res, dict):
+                    status = str(res.get("status") or "").strip()
+                    reason = str(res.get("reason") or "").strip()
+            except Exception:
+                pass
             items.append(
                 {
                     "runId": row[0],
@@ -471,6 +482,8 @@ def list_runs(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
                     "selectedTemplateId": row[5],
                     "intent": row[6],
                     "confidence": row[7],
+                    "status": status,
+                    "reason": reason,
                 }
             )
         return items

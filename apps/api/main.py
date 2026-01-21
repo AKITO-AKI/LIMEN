@@ -39,6 +39,30 @@ INTENTS_11 = {
 }
 
 
+def _load_allowed_intents() -> set[str]:
+    """Load allowed intent IDs.
+
+    MVP: fixed 11 intents.
+    Future: expand by editing apps/api/intent_registry.json.
+    """
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "intent_registry.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        intents = set(str(x).strip() for x in (data.get("intents") or []) if str(x).strip())
+        intents.add("unknown")
+        return intents
+    except Exception:
+        s = set(INTENTS_11)
+        s.add("unknown")
+        return s
+
+
+ALLOWED_INTENTS = _load_allowed_intents()
+
+
 app = FastAPI(title="LIMEN API (Stage 4 MVP)", version="0.2.0")
 
 app.add_middleware(
@@ -86,15 +110,16 @@ def _normalize_direction(d: Any) -> Dict[str, float]:
 def _validate_meaning(obj: Any, source: str, target: str) -> Dict[str, Any]:
     """Strict Meaning JSON validation (D4-3).
 
-    We keep intent within the fixed 11 set; low confidence is handled by the web.
+    MVP: keep intent within the fixed 11 (+ 'unknown') set.
+    Future: expand ALLOWED_INTENTS via intent_registry.json.
     """
 
     if not isinstance(obj, dict):
         raise ValueError("meaning must be an object")
 
     intent = str(obj.get("intent") or "").strip()
-    if intent not in INTENTS_11:
-        raise ValueError(f"invalid intent: {intent}")
+    if intent not in ALLOWED_INTENTS:
+        raise ValueError(f"unsupported_intent:{intent}")
 
     params = obj.get("params") if isinstance(obj.get("params"), dict) else {}
 
@@ -230,6 +255,8 @@ def meaning_estimate(payload: dict):
 
     llm_endpoint = str(os.environ.get("LIMEN_LLM_ENDPOINT") or "").strip()
 
+    llm_debug: Dict[str, Any] = {}
+
     if llm_endpoint:
         llm_in = {
             "schemaVersion": "0.1.0",
@@ -238,18 +265,68 @@ def meaning_estimate(payload: dict):
             "features": features,
         }
         llm_out = _call_llm_endpoint(llm_endpoint, llm_in)
-        if llm_out is not None:
+        if llm_out is None:
+            llm_debug = {
+                "llmEndpoint": llm_endpoint,
+                "llmUsed": False,
+                "llmMode": "fallback",
+                "llmError": "call_failed",
+            }
+        else:
             try:
                 validated = _validate_meaning(llm_out, source, target)
-                validated["debug"]["llmEndpoint"] = llm_endpoint
+                validated.setdefault("debug", {})
+                validated["debug"].update(
+                    {
+                        "llmEndpoint": llm_endpoint,
+                        "llmUsed": True,
+                        "llmMode": "external",
+                    }
+                )
                 return validated
             except Exception as e:
-                # Fall back.
-                pass
+                err = str(e)
+                # If the model produced an intent that isn't supported yet, do NOT
+                # reclassify with heuristics (that would hide the mismatch). Return
+                # intent='unknown' and let the UI/logs explain the block.
+                if err.startswith("unsupported_intent:"):
+                    raw_intent = str(llm_out.get("intent") or "").strip()
+                    params = llm_out.get("params") if isinstance(llm_out.get("params"), dict) else {}
+                    unknown = {
+                        "intent": "unknown",
+                        "confidence": 0.0,
+                        "params": {
+                            "direction": _normalize_direction(params.get("direction")),
+                            "intensity": _clamp01(params.get("intensity"), 0.35),
+                            "tempo": _clamp01(params.get("tempo"), 0.5),
+                            "politeness": _clamp01(params.get("politeness"), 0.5),
+                        },
+                        "rationale": f"unsupported intent from model: {raw_intent}",
+                        "debug": {
+                            "llmEndpoint": llm_endpoint,
+                            "llmUsed": False,
+                            "llmMode": "external_rejected",
+                            "llmUnsupportedIntent": raw_intent,
+                            "llmRejectedReason": err,
+                        },
+                    }
+                    return _validate_meaning(unknown, source, target)
+
+                # Fall back, but record why the LLM response was rejected.
+                llm_debug = {
+                    "llmEndpoint": llm_endpoint,
+                    "llmUsed": False,
+                    "llmMode": "fallback",
+                    "llmRejectedReason": err,
+                }
 
     try:
         out = _heuristic_meaning(features, source, target)
-        return _validate_meaning(out, source, target)
+        validated = _validate_meaning(out, source, target)
+        validated.setdefault("debug", {})
+        if llm_debug:
+            validated["debug"].update(llm_debug)
+        return validated
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
