@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react'
 import type { Skeleton } from '../lib/types'
+import { edgesForJointSet } from '../lib/joints'
 
 function clamp01(v: number) {
   return Math.max(0, Math.min(1, v))
@@ -48,6 +49,16 @@ export function SkeletonCanvas(props: { skeleton: Skeleton; label?: string }) {
       return { x, y, c: j.confidence ?? f.overallConfidence ?? 0.8 }
     }
 
+    const edges = edgesForJointSet(props.skeleton.jointSet)
+
+    const pick = (frameIndex: number, candidates: string[]) => {
+      for (const c of candidates) {
+        const p = toXY(frameIndex, c)
+        if (p) return p
+      }
+      return null
+    }
+
     const draw = () => {
       const now = performance.now()
       const tSec = ((now - start) / 1000) % duration
@@ -79,31 +90,46 @@ export function SkeletonCanvas(props: { skeleton: Skeleton; label?: string }) {
         ctx.stroke()
       }
 
-      const nose = toXY(idx, 'NOSE')
-      const lw = toXY(idx, 'LEFT_WRIST')
-      const rw = toXY(idx, 'RIGHT_WRIST')
-
-      const line = (a: any, b: any) => {
-        if (!a || !b) return
-        ctx.strokeStyle = 'rgba(124,58,237,0.55)'
-        ctx.lineWidth = 3
+      // edges if known
+      ctx.strokeStyle = 'rgba(124,58,237,0.55)'
+      ctx.lineWidth = 2
+      for (const [a, b] of edges) {
+        const pa = toXY(idx, a)
+        const pb = toXY(idx, b)
+        if (!pa || !pb) continue
         ctx.beginPath()
-        ctx.moveTo(a.x, a.y)
-        ctx.lineTo(b.x, b.y)
+        ctx.moveTo(pa.x, pa.y)
+        ctx.lineTo(pb.x, pb.y)
         ctx.stroke()
       }
-      line(nose, lw)
-      line(nose, rw)
-      line(lw, rw)
 
+      // points
+      ctx.fillStyle = 'rgba(124,58,237,0.9)'
+      const f = frames[idx]
+      if (f) {
+        let i = 0
+        for (const k of Object.keys(f.joints)) {
+          // downsample a bit for performance
+          if ((i++ % 2) === 1) continue
+          const p = toXY(idx, k)
+          if (!p) continue
+          ctx.beginPath()
+          ctx.arc(p.x, p.y, 3, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+
+      // fallback highlight
+      const nose = pick(idx, ['POSE_NOSE', 'NOSE'])
+      const lw = pick(idx, ['POSE_LEFT_WRIST', 'LEFT_WRIST', 'LH_WRIST'])
+      const rw = pick(idx, ['POSE_RIGHT_WRIST', 'RIGHT_WRIST', 'RH_WRIST'])
       const dot = (p: any) => {
         if (!p) return
         ctx.fillStyle = 'rgba(124,58,237,0.95)'
         ctx.beginPath()
-        ctx.arc(p.x, p.y, 7, 0, Math.PI * 2)
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2)
         ctx.fill()
-
-        ctx.strokeStyle = 'rgba(0,0,0,0.08)'
+        ctx.strokeStyle = 'rgba(0,0,0,0.10)'
         ctx.lineWidth = 2
         ctx.stroke()
       }

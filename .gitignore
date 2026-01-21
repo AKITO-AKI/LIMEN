@@ -7,7 +7,10 @@ dist/
 __pycache__/
 .venv/
 .venv*/
+.pytest_cache/
 .vscode/
 .idea/
+
+# LIMEN local data
 apps/api/data/
 *.db

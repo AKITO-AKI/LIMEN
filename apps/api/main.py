@@ -1,11 +1,10 @@
-from __future__ import annotations
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from storage import ensure_db, get_session, list_sessions, save_session
 
-app = FastAPI(title="LIMEN API (Stage 1 stub)", version="0.1.0")
+
+app = FastAPI(title="LIMEN API (Stage 1 prototype)", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,20 +18,27 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def _startup() -> None:
-    ensure_db()
-
-
 @app.get("/health")
 def health():
     return {"ok": True, "service": "limen-api", "stage": 1}
 
 
+@app.on_event("startup")
+def _startup():
+    ensure_db()
+
+
 @app.post("/meaning/estimate")
 def meaning_estimate(payload: dict):
+    """Stage 0: return a schema-shaped dummy Meaning payload.
+
+    The web app will call this endpoint to validate wiring.
+    Stage 4 will replace this with real inference.
+    """
+
     source = payload.get("sourceLanguage", "JSL")
     target = payload.get("targetLanguage", "ASL")
+
     return {
         "schemaVersion": "0.1.0",
         "sourceLanguage": source,
@@ -45,30 +51,34 @@ def meaning_estimate(payload: dict):
             "politeness": 0.80,
         },
         "confidence": 0.72,
-        "rationale": "Stage1 stub: returning a fixed Meaning response.",
+        "rationale": "Stage0 stub: returning a fixed Meaning response.",
         "debug": {"receivedKeys": list(payload.keys())},
     }
 
 
 @app.post("/session/save")
 def session_save(payload: dict):
-    if not isinstance(payload, dict) or "schemaVersion" not in payload or "inputSkeleton" not in payload:
-        raise HTTPException(status_code=400, detail="Invalid Session payload")
+    """Stage1: store a session payload in SQLite.
 
-    session_id = save_session(payload)
-    return {"sessionId": session_id}
+    We store *only* skeleton + derived data; raw video is not accepted here.
+    """
+
+    try:
+        session_id = save_session(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "sessionId": session_id}
 
 
 @app.get("/session/list")
-def session_list(limit: int = 50):
-    limit = max(1, min(200, int(limit)))
-    items = list_sessions(limit=limit)
-    return {"count": len(items), "items": items}
+def session_list(limit: int = 30, offset: int = 0):
+    items = list_sessions(limit=limit, offset=offset)
+    return {"items": items}
 
 
 @app.get("/session/get/{session_id}")
 def session_get(session_id: str):
     payload = get_session(session_id)
-    if payload is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+    if not payload:
+        raise HTTPException(status_code=404, detail="session not found")
     return payload

@@ -16,7 +16,8 @@
       "enum": [
         "mediapipe_holistic_v1",
         "mediapipe_pose_v1",
-        "mediapipe_hands_v1"
+        "mediapipe_hands_v1",
+        "mediapipe_pose_hands_v1"
       ]
     },
     "coordinateSpace": {

@@ -2,7 +2,7 @@ import type { Language, Meaning, Skeleton } from './types'
 
 export const dummySkeleton: Skeleton = {
   schemaVersion: '0.1.0',
-  jointSet: 'mediapipe_pose_v1',
+  jointSet: 'mediapipe_pose_hands_v1',
   coordinateSpace: 'normalized',
   fps: 30,
   meta: { note: 'Stage0 dummy skeleton' },
@@ -13,9 +13,9 @@ export const dummySkeleton: Skeleton = {
       t,
       overallConfidence: 0.92,
       joints: {
-        NOSE: { x: 0.5, y: 0.12, z: -0.1, confidence: 0.95 },
-        LEFT_WRIST: { x: 0.35 - wobble, y: 0.55 - wobble, z: -0.05, confidence: 0.9 },
-        RIGHT_WRIST: { x: 0.65 + wobble, y: 0.54 - wobble, z: -0.05, confidence: 0.91 }
+        POSE_NOSE: { x: 0.5, y: 0.12, z: -0.1, confidence: 0.95 },
+        POSE_LEFT_WRIST: { x: 0.35 - wobble, y: 0.55 - wobble, z: -0.05, confidence: 0.9 },
+        POSE_RIGHT_WRIST: { x: 0.65 + wobble, y: 0.54 - wobble, z: -0.05, confidence: 0.91 }
       }
     }
   })

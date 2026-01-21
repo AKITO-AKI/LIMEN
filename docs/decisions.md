@@ -1,4 +1,4 @@
-# Decisions (Stage 0)
+# Decisions
 
 This file records early choices so future changes are intentional.
 
@@ -22,22 +22,36 @@ This file records early choices so future changes are intentional.
 
 ---
 
-## Open decisions (please answer)
+## Stage1 decisions (confirmed)
 
-These block Stage 1/2 design unless we pick defaults.
+### Q1. Capture model split
 
-1) **JointSet baseline**
-   - Option A: `mediapipe_holistic_v1` (hands + pose + face)
-   - Option B: `mediapipe_pose_v1` + `mediapipe_hands_v1` (split streams)
+- Use Pose + Hands as split streams (B).
 
-2) **Coordinate space for stored Skeleton**
-   - Option A: `normalized` (0..1 image space)
-   - Option B: `pixel` (raw image pixels)
-   - Option C: `world` (model-specific world coords)
+### Q2. Coordinate space
 
-3) **Depth (z) treatment in MVP**
-   - Option A: keep MediaPipe's relative z (2.5D)
-   - Option B: ignore z until later
+- Store x/y in `normalized` (0..1) for MVP.
 
-4) **MVP intent list**
-   - Confirm the initial set (10-ish) used in `schemas/meaning.schema.json`, or replace with your preferred list.
+### Q3. Depth (z)
+
+- Store z as well (2.5D; treat as relative depth in MVP).
+
+### Q4. MVP intent list
+
+- Keep the initial 11 intents defined in the schema.
+
+### Q5. Early server-side logging
+
+- Implement server session storage early in the prototype (SQLite).
+
+### Q6. UI style
+
+- Simple + functional first ("Blender × VSCode" feel).
+
+### Q7. Storage format
+
+- SQLite (A) as the server session log backend.
+
+### Q8. Recording UX
+
+- Start → Stop → Save (A). Also show a small REC status chip + frame count + elapsed time.

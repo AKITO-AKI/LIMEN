@@ -6,7 +6,7 @@ LIMEN is a sign-language bridge that focuses on **skeleton UI** and **explainabl
 - Keep nuances (direction / intensity / tempo) as parameters
 - Prefer **skeletal representation** over avatar styling
 
-This repository is the **Stage 0** scaffold for a Web MVP.
+This repository is the **Stage 1** prototype (built on the Stage0 scaffold).
 
 ## Repo structure
 
@@ -43,7 +43,14 @@ npm run dev:api
 
 API runs on `http://localhost:8000`.
 
-## Stage 0 goals
+## Stage 1 features
+
+- WebRTC camera preview + MediaPipe (Pose + Hands)
+- Overlay skeleton drawing (normalized x/y, z kept)
+- Recording UX: **Start → Stop → Save Session**
+- Server session logging (SQLite): list + load sessions
+
+## Stage 0 goals (kept)
 
 - Lock **data contracts** early (Skeleton / Meaning / Session)
 - Provide a **3-pane UI shell** (Input / Meaning / Output)

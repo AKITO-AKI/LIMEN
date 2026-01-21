@@ -2,7 +2,11 @@ export type Language = 'JSL' | 'ASL' | 'CSL'
 
 export type CoordinateSpace = 'pixel' | 'normalized' | 'world'
 
-export type JointSet = 'mediapipe_holistic_v1' | 'mediapipe_pose_v1' | 'mediapipe_hands_v1'
+export type JointSet =
+  | 'mediapipe_holistic_v1'
+  | 'mediapipe_pose_v1'
+  | 'mediapipe_hands_v1'
+  | 'mediapipe_pose_hands_v1'
 
 export type Joint = {
   x: number
@@ -54,4 +58,16 @@ export type Meaning = {
   confidence: number
   rationale?: string
   debug?: Record<string, unknown>
+}
+
+export type Session = {
+  schemaVersion: string
+  sessionId: string
+  createdAt: string
+  sourceLanguage: Language
+  targetLanguage: Language
+  inputSkeleton: Skeleton
+  estimatedMeaning?: Meaning
+  outputSkeleton?: Skeleton
+  meta?: Record<string, unknown>
 }

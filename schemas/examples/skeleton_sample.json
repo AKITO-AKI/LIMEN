@@ -1,6 +1,6 @@
 {
   "schemaVersion": "0.1.0",
-  "jointSet": "mediapipe_pose_v1",
+  "jointSet": "mediapipe_pose_hands_v1",
   "coordinateSpace": "normalized",
   "fps": 30,
   "meta": {
@@ -11,19 +11,19 @@
       "t": 0.0,
       "overallConfidence": 0.92,
       "joints": {
-        "NOSE": {
+        "POSE_NOSE": {
           "x": 0.5,
           "y": 0.12,
           "z": -0.1,
           "confidence": 0.95
         },
-        "LEFT_WRIST": {
+        "POSE_LEFT_WRIST": {
           "x": 0.35,
           "y": 0.55,
           "z": -0.05,
           "confidence": 0.9
         },
-        "RIGHT_WRIST": {
+        "POSE_RIGHT_WRIST": {
           "x": 0.65,
           "y": 0.54,
           "z": -0.05,
@@ -35,19 +35,19 @@
       "t": 0.033,
       "overallConfidence": 0.93,
       "joints": {
-        "NOSE": {
+        "POSE_NOSE": {
           "x": 0.5,
           "y": 0.12,
           "z": -0.1,
           "confidence": 0.96
         },
-        "LEFT_WRIST": {
+        "POSE_LEFT_WRIST": {
           "x": 0.34,
           "y": 0.54,
           "z": -0.05,
           "confidence": 0.9
         },
-        "RIGHT_WRIST": {
+        "POSE_RIGHT_WRIST": {
           "x": 0.66,
           "y": 0.53,
           "z": -0.05,

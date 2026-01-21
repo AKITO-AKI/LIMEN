@@ -2,8 +2,10 @@ import React, { useMemo, useState } from 'react'
 import { Panel } from './components/Panel'
 import { SkeletonCanvas } from './components/SkeletonCanvas'
 import { MeaningView } from './components/MeaningView'
+import { InputCapture } from './components/InputCapture'
+import { SessionBrowser } from './components/SessionBrowser'
 import { dummyMeaning, dummySkeleton } from './lib/dummy'
-import type { Language, Meaning, Skeleton } from './lib/types'
+import type { Language, Meaning, Skeleton, Session } from './lib/types'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
 
@@ -30,7 +32,9 @@ export default function App() {
   const [targetLanguage, setTargetLanguage] = useState<Language>('ASL')
   const [meaning, setMeaning] = useState<Meaning | null>(() => dummyMeaning('JSL', 'ASL'))
   const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<string>('Stage0: dummy mode')
+  const [status, setStatus] = useState<string>('Stage1: camera + pose/hands + session log')
+  const [recorded, setRecorded] = useState<Skeleton | null>(null)
+  const [loadedSession, setLoadedSession] = useState<Session | null>(null)
 
   const outputSkeleton = useMemo(() => {
     // Stage0: output is dummy. Stage5: Meaning → re-encode skeleton.
@@ -46,10 +50,11 @@ export default function App() {
     setBusy(true)
     setStatus('Calling API...')
     try {
+      const inputSkeleton = loadedSession?.inputSkeleton ?? recorded ?? dummySkeleton
       const m = await estimateMeaningViaApi({
         sourceLanguage,
         targetLanguage,
-        inputSkeleton: dummySkeleton
+        inputSkeleton
       })
       setMeaning(m)
       setStatus('API: meaning updated')
@@ -65,7 +70,7 @@ export default function App() {
       <header>
         <div className="header-left">
           <div className="title">LIMEN</div>
-          <div className="subtitle">Stage 0 scaffold — Input / Meaning / Output</div>
+          <div className="subtitle">Stage 1 — Input / Meaning / Output</div>
         </div>
 
         <div className="toolbar">
@@ -92,7 +97,7 @@ export default function App() {
           </button>
 
           <button onClick={onApi} disabled={busy}>
-            Call API
+            Estimate Meaning (API)
           </button>
         </div>
       </header>
@@ -102,9 +107,31 @@ export default function App() {
 
         <div className="grid" style={{ marginTop: 10 }}>
           <Panel title="Input" badge="Stage1: camera + MediaPipe">
-            <SkeletonCanvas skeleton={dummySkeleton} label="dummy input skeleton" />
-            <div className="helper">
-              Stage0では入力はダミー骨格。Stage1でWebRTC＋MediaPipeに差し替え。
+            <InputCapture
+              sourceLanguage={sourceLanguage}
+              targetLanguage={targetLanguage}
+              apiBase={API_BASE}
+              onRecorded={(s) => setRecorded(s)}
+            />
+
+            <div className="split" style={{ marginTop: 10 }}>
+              <div>
+                <div className="helper">Recorded (Start→Stop→Save)</div>
+                {recorded ? (
+                  <SkeletonCanvas skeleton={recorded} label="recorded skeleton" />
+                ) : (
+                  <div className="note">No recording yet. Start → Stop to buffer frames.</div>
+                )}
+              </div>
+              <div>
+                <SessionBrowser
+                  apiBase={API_BASE}
+                  onLoad={(session) => {
+                    setLoadedSession(session)
+                    setStatus(`Loaded session: ${session?.sessionId ?? ''}`)
+                  }}
+                />
+              </div>
             </div>
           </Panel>
 
