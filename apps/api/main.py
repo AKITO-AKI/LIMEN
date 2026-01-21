@@ -177,17 +177,31 @@ def _call_llm_endpoint(endpoint: str, payload: Dict[str, Any]) -> Optional[Dict[
     """Call an external specialized model endpoint.
 
     The endpoint must return a Meaning-shaped JSON.
+    
+    Optional:
+      - LIMEN_LLM_API_KEY: sent as X-API-Key
+      - LIMEN_LLM_TIMEOUT_SEC: request timeout (default 8)
     """
 
     try:
         data = json.dumps(payload).encode("utf-8")
+        headers: Dict[str, str] = {"content-type": "application/json"}
+        api_key = str(os.environ.get("LIMEN_LLM_API_KEY") or "").strip()
+        if api_key:
+            headers["X-API-Key"] = api_key
+
+        try:
+            timeout = float(os.environ.get("LIMEN_LLM_TIMEOUT_SEC") or 8)
+        except Exception:
+            timeout = 8
+
         req = urllib.request.Request(
             endpoint,
             data=data,
-            headers={"content-type": "application/json"},
+            headers=headers,
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8")
         return json.loads(raw)
     except Exception:

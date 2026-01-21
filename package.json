@@ -10,6 +10,8 @@
     "preview:web": "npm --workspace=apps/web run preview",
     "setup:api": "python -m pip install -r apps/api/requirements.txt",
     "dev:api": "python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000 --app-dir apps/api",
+    "setup:llm": "python -m pip install -r apps/llm/requirements.txt",
+    "dev:llm": "python -m uvicorn main:app --reload --host 127.0.0.1 --port 9100 --app-dir apps/llm",
     "typecheck": "npm --workspace=apps/web run typecheck"
   }
 }
