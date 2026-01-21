@@ -161,8 +161,8 @@ export function SessionViewer(props: {
           </div>
 
           <div className="helper">
-            3-view is fixed (Front/Side/Top). BVH export is a minimal MediaPipe-based rig (MVP). Hands are not included in
-            BVH yet.
+            3-view is fixed (Front/Side/Top). BVH export is a minimal MediaPipe-based rig (MVP). Hands/fingers are included
+            using MediaPipe hand landmarks.
           </div>
         </>
       )}

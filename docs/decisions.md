@@ -75,3 +75,7 @@ This file records early choices so future changes are intentional.
 ### S2-4. BVH base rig
 
 - A: minimal MediaPipe-based humanoid (pose-only) rig for MVP.
+
+### S2-5. BVH hands
+
+- A: include hands/fingers in BVH using MediaPipe hand landmarks (aligned to pose wrists).

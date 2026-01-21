@@ -129,26 +129,12 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v))
 }
 
-// ---- MediaPipe minimal rig (Option 4A) ----
+// ---- MediaPipe BVH rig (Stage2+) ----
+// Base: pose-only minimal humanoid (S2-4A)
+// Extension: add hand/finger joints (S2-5A)
 
-type RigJoint =
-  | 'Hips'
-  | 'Spine'
-  | 'Chest'
-  | 'Neck'
-  | 'Head'
-  | 'LeftShoulder'
-  | 'LeftElbow'
-  | 'LeftWrist'
-  | 'RightShoulder'
-  | 'RightElbow'
-  | 'RightWrist'
-  | 'LeftHip'
-  | 'LeftKnee'
-  | 'LeftAnkle'
-  | 'RightHip'
-  | 'RightKnee'
-  | 'RightAnkle'
+// Keep the rig joint type flexible to avoid brittle mega-unions.
+type RigJoint = string
 
 const PARENT: Record<RigJoint, RigJoint | null> = {
   Hips: null,
@@ -213,12 +199,113 @@ const ORDER: RigJoint[] = [
   'RightAnkle'
 ]
 
+type Side = 'Left' | 'Right'
+
+type HandNode = {
+  rig: RigJoint
+  lm: string // MediaPipe hand landmark name (without LH_/RH_)
+  parent: RigJoint
+}
+
+const HAND_CHAINS: Array<{ finger: string; parts: Array<{ rigPart: string; lm: string }> }> = [
+  {
+    finger: 'Thumb',
+    parts: [
+      { rigPart: 'Thumb_CMC', lm: 'THUMB_CMC' },
+      { rigPart: 'Thumb_MCP', lm: 'THUMB_MCP' },
+      { rigPart: 'Thumb_IP', lm: 'THUMB_IP' },
+      { rigPart: 'Thumb_TIP', lm: 'THUMB_TIP' }
+    ]
+  },
+  {
+    finger: 'Index',
+    parts: [
+      { rigPart: 'Index_MCP', lm: 'INDEX_FINGER_MCP' },
+      { rigPart: 'Index_PIP', lm: 'INDEX_FINGER_PIP' },
+      { rigPart: 'Index_DIP', lm: 'INDEX_FINGER_DIP' },
+      { rigPart: 'Index_TIP', lm: 'INDEX_FINGER_TIP' }
+    ]
+  },
+  {
+    finger: 'Middle',
+    parts: [
+      { rigPart: 'Middle_MCP', lm: 'MIDDLE_FINGER_MCP' },
+      { rigPart: 'Middle_PIP', lm: 'MIDDLE_FINGER_PIP' },
+      { rigPart: 'Middle_DIP', lm: 'MIDDLE_FINGER_DIP' },
+      { rigPart: 'Middle_TIP', lm: 'MIDDLE_FINGER_TIP' }
+    ]
+  },
+  {
+    finger: 'Ring',
+    parts: [
+      { rigPart: 'Ring_MCP', lm: 'RING_FINGER_MCP' },
+      { rigPart: 'Ring_PIP', lm: 'RING_FINGER_PIP' },
+      { rigPart: 'Ring_DIP', lm: 'RING_FINGER_DIP' },
+      { rigPart: 'Ring_TIP', lm: 'RING_FINGER_TIP' }
+    ]
+  },
+  {
+    finger: 'Pinky',
+    parts: [
+      { rigPart: 'Pinky_MCP', lm: 'PINKY_MCP' },
+      { rigPart: 'Pinky_PIP', lm: 'PINKY_PIP' },
+      { rigPart: 'Pinky_DIP', lm: 'PINKY_DIP' },
+      { rigPart: 'Pinky_TIP', lm: 'PINKY_TIP' }
+    ]
+  }
+]
+
+const HAND_NODES: Record<Side, HandNode[]> = { Left: [], Right: [] }
+
+function buildHandRig(side: Side) {
+  const wrist: RigJoint = `${side}Wrist`
+
+  // Use index MCP as the wrist's primary child to estimate a reasonable wrist rotation.
+  MAIN_CHILD[wrist] = `${side}Index_MCP`
+
+  const nodes: HandNode[] = []
+  for (const chain of HAND_CHAINS) {
+    let parent: RigJoint = wrist
+    for (const part of chain.parts) {
+      const rig: RigJoint = `${side}${part.rigPart}`
+      nodes.push({ rig, lm: part.lm, parent })
+      PARENT[rig] = parent
+      // Set a main child along the finger chain (local rotations)
+      const nextIdx = chain.parts.findIndex((p) => p.rigPart === part.rigPart) + 1
+      if (nextIdx < chain.parts.length) {
+        MAIN_CHILD[rig] = `${side}${chain.parts[nextIdx]!.rigPart}`
+      }
+      parent = rig
+    }
+  }
+  HAND_NODES[side] = nodes
+
+  // Insert into ORDER after the corresponding wrist so hierarchy emits under the wrist.
+  const wristIndex = ORDER.indexOf(wrist)
+  if (wristIndex >= 0) {
+    const rigNames = nodes.map((n) => n.rig)
+    ORDER.splice(wristIndex + 1, 0, ...rigNames)
+  }
+}
+
+// Build hand rigs once at module load.
+buildHandRig('Left')
+buildHandRig('Right')
+
 function poseKey(name: string) {
   return `POSE_${name}`
 }
 
 function getPose(frame: SkeletonFrame, name: string): Joint | null {
   return frame.joints[poseKey(name)] ?? null
+}
+
+function handKey(side: Side, name: string) {
+  return `${side === 'Left' ? 'LH' : 'RH'}_${name}`
+}
+
+function getHand(frame: SkeletonFrame, side: Side, name: string): Joint | null {
+  return frame.joints[handKey(side, name)] ?? null
 }
 
 function avg(a: Vec3 | null, b: Vec3 | null): Vec3 | null {
@@ -253,6 +340,25 @@ function rigPositions(frame: SkeletonFrame, scale: number): Record<RigJoint, Vec
   const head = headJ ? toBVHCoords(headJ, scale) : chest
   const neck = avg(chest, head) ?? chest
 
+  const leftWristPoseJ = getPose(frame, 'LEFT_WRIST')
+  const rightWristPoseJ = getPose(frame, 'RIGHT_WRIST')
+
+  // If pose wrist is missing, fall back to hand wrist so finger joints can still export.
+  const leftWristHandJ = getHand(frame, 'Left', 'WRIST')
+  const rightWristHandJ = getHand(frame, 'Right', 'WRIST')
+
+  const leftWristPos = leftWristPoseJ
+    ? toBVHCoords(leftWristPoseJ, scale)
+    : leftWristHandJ
+      ? toBVHCoords(leftWristHandJ, scale)
+      : null
+
+  const rightWristPos = rightWristPoseJ
+    ? toBVHCoords(rightWristPoseJ, scale)
+    : rightWristHandJ
+      ? toBVHCoords(rightWristHandJ, scale)
+      : null
+
   const out: Record<RigJoint, Vec3 | null> = {
     Hips: hips,
     Spine: spine,
@@ -262,11 +368,11 @@ function rigPositions(frame: SkeletonFrame, scale: number): Record<RigJoint, Vec
 
     LeftShoulder: lsho ?? chest,
     LeftElbow: getPose(frame, 'LEFT_ELBOW') ? toBVHCoords(getPose(frame, 'LEFT_ELBOW')!, scale) : null,
-    LeftWrist: getPose(frame, 'LEFT_WRIST') ? toBVHCoords(getPose(frame, 'LEFT_WRIST')!, scale) : null,
+    LeftWrist: leftWristPos,
 
     RightShoulder: rsho ?? chest,
     RightElbow: getPose(frame, 'RIGHT_ELBOW') ? toBVHCoords(getPose(frame, 'RIGHT_ELBOW')!, scale) : null,
-    RightWrist: getPose(frame, 'RIGHT_WRIST') ? toBVHCoords(getPose(frame, 'RIGHT_WRIST')!, scale) : null,
+    RightWrist: rightWristPos,
 
     LeftHip: lhip ?? hips,
     LeftKnee: getPose(frame, 'LEFT_KNEE') ? toBVHCoords(getPose(frame, 'LEFT_KNEE')!, scale) : null,
@@ -276,6 +382,28 @@ function rigPositions(frame: SkeletonFrame, scale: number): Record<RigJoint, Vec
     RightKnee: getPose(frame, 'RIGHT_KNEE') ? toBVHCoords(getPose(frame, 'RIGHT_KNEE')!, scale) : null,
     RightAnkle: getPose(frame, 'RIGHT_ANKLE') ? toBVHCoords(getPose(frame, 'RIGHT_ANKLE')!, scale) : null
   }
+
+  // ---- Hands: align hand landmarks to pose wrist (best-effort) ----
+  const applyHand = (side: Side) => {
+    const wristRig: RigJoint = `${side}Wrist`
+    const wrist = out[wristRig]
+    const handWristJ = getHand(frame, side, 'WRIST')
+    const handWrist = handWristJ ? toBVHCoords(handWristJ, scale) : null
+
+    const delta = wrist && handWrist ? sub(wrist, handWrist) : v(0, 0, 0)
+
+    for (const node of HAND_NODES[side]) {
+      const j = getHand(frame, side, node.lm)
+      if (j) {
+        out[node.rig] = add(toBVHCoords(j, scale), delta)
+      } else {
+        out[node.rig] = wrist
+      }
+    }
+  }
+
+  applyHand('Left')
+  applyHand('Right')
 
   // Fallbacks: if elbow/wrist/knee/ankle missing, reuse parent position to avoid NaNs.
   for (const j of ORDER) {
