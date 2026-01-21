@@ -1,247 +1,240 @@
-import React, { useMemo, useState } from 'react'
-import { Panel } from './components/Panel'
-import { SkeletonCanvas } from './components/SkeletonCanvas'
-import { MeaningView } from './components/MeaningView'
+import React, { useEffect, useMemo, useState } from 'react'
 import { InputCapture } from './components/InputCapture'
+import { MeaningView } from './components/MeaningView'
+import { Panel } from './components/Panel'
 import { SessionBrowser } from './components/SessionBrowser'
 import { SessionViewer } from './components/SessionViewer'
 import { TemplateBrowser } from './components/TemplateBrowser'
-import { dummyMeaning, dummySkeleton } from './lib/dummy'
-import type { Language, Meaning, Skeleton, Session } from './lib/types'
+import { RunBrowser } from './components/RunBrowser'
+import { ConsentModal } from './components/ConsentModal'
+import { extractFeatures } from './lib/features'
+import { apiMeaningEstimate, apiRunSave, apiTemplateFind, apiTemplateGet } from './lib/api'
+import { canProceedMeaning, reconstructFromTemplate } from './lib/reconstruct'
+import type { Language, Meaning, Skeleton } from './lib/types'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
+// Stage4+ MVP: API base (local FastAPI server)
+const API_BASE = 'http://localhost:8000'
 
-async function estimateMeaningViaApi(args: {
-  sourceLanguage: Language
-  targetLanguage: Language
-  inputSkeleton: Skeleton
-}): Promise<Meaning> {
-  const res = await fetch(`${API_BASE}/meaning/estimate`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(args)
-  })
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`API error: ${res.status} ${text}`)
-  }
-  return await res.json()
+function nowISO() {
+  return new Date().toISOString()
 }
 
-type TemplatePayload = {
-  templateId: string
-  createdAt: string
-  language: Language
-  intent: string
-  skeletonClip?: Skeleton
-  bvhText?: string
+type Status = {
+  kind: 'idle' | 'busy' | 'ok' | 'error'
+  text: string
 }
 
 export default function App() {
   const [sourceLanguage, setSourceLanguage] = useState<Language>('JSL')
   const [targetLanguage, setTargetLanguage] = useState<Language>('ASL')
-  const [meaning, setMeaning] = useState<Meaning | null>(() => dummyMeaning('JSL', 'ASL'))
-  const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<string>('Stage3: template studio (BVH primary) + replay/export')
-  const [recorded, setRecorded] = useState<Skeleton | null>(null)
-  const [loadedSession, setLoadedSession] = useState<Session | null>(null)
-  const [loadedTemplate, setLoadedTemplate] = useState<TemplatePayload | null>(null)
-  const [viewSource, setViewSource] = useState<'recorded' | 'loaded' | 'template'>('recorded')
-  const [templateRefresh, setTemplateRefresh] = useState(0)
 
-  const outputSkeleton = useMemo(() => {
-    // Stage0: output is dummy. Stage5: Meaning → re-encode skeleton.
-    return dummySkeleton
-  }, [])
+  const [consent, setConsent] = useState<boolean>(() => {
+    return localStorage.getItem('limen_consent_v1') === '1'
+  })
 
-  const onDummy = () => {
-    setMeaning(dummyMeaning(sourceLanguage, targetLanguage))
-    setStatus('Stage0: dummy meaning generated')
-  }
+  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined)
+  const [inputSkeleton, setInputSkeleton] = useState<Skeleton | null>(null)
+  const [meaning, setMeaning] = useState<Meaning | null>(null)
+  const [outputSkeleton, setOutputSkeleton] = useState<Skeleton | null>(null)
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
+  const [status, setStatus] = useState<Status>({ kind: 'idle', text: 'Ready' })
 
-  const onApi = async () => {
-    setBusy(true)
-    setStatus('Calling API...')
+  const features = useMemo(() => {
+    if (!inputSkeleton) return null
     try {
-      const inputSkeleton =
-        viewSource === 'loaded'
-          ? loadedSession?.inputSkeleton ?? recorded ?? dummySkeleton
-          : viewSource === 'template'
-            ? loadedTemplate?.skeletonClip ?? recorded ?? dummySkeleton
-            : recorded ?? dummySkeleton
+      return extractFeatures(inputSkeleton)
+    } catch {
+      return null
+    }
+  }, [inputSkeleton])
 
-      const m = await estimateMeaningViaApi({
+  const canRun = !!consent && !!features && !!inputSkeleton
+
+  async function runPipeline() {
+    if (!features) return
+    setStatus({ kind: 'busy', text: 'Meaning…' })
+    setMeaning(null)
+    setOutputSkeleton(null)
+    setSelectedTemplateId(null)
+
+    try {
+      const m = await apiMeaningEstimate(API_BASE, {
         sourceLanguage,
         targetLanguage,
-        inputSkeleton
+        features
       })
       setMeaning(m)
-      setStatus('API: meaning updated')
+
+      if (!canProceedMeaning(m)) {
+        setStatus({ kind: 'ok', text: `Low confidence (${Math.round(m.confidence * 100)}%). Re-record recommended.` })
+        return
+      }
+
+      setStatus({ kind: 'busy', text: 'Template…' })
+      const templateId = await apiTemplateFind(API_BASE, targetLanguage, m.intent)
+      if (!templateId) {
+        setStatus({ kind: 'error', text: `No template for ${targetLanguage}/${m.intent}` })
+        return
+      }
+      setSelectedTemplateId(templateId)
+
+      const tpl = await apiTemplateGet(API_BASE, templateId)
+      const tplClip = tpl?.skeletonClip as Skeleton | undefined
+      if (!tplClip || !tplClip.frames || tplClip.frames.length === 0) {
+        setStatus({ kind: 'error', text: 'Template is missing skeletonClip' })
+        return
+      }
+
+      setStatus({ kind: 'busy', text: 'Reconstruct…' })
+      const rec = reconstructFromTemplate(tplClip, m.params)
+      setOutputSkeleton(rec.skeleton)
+
+      // Stage6: store run log for transparency.
+      setStatus({ kind: 'busy', text: 'Saving run…' })
+      try {
+        await apiRunSave(API_BASE, {
+          schemaVersion: '0.1.0',
+          createdAt: nowISO(),
+          sourceLanguage,
+          targetLanguage,
+          sourceSessionId: activeSessionId,
+          selectedTemplateId: templateId,
+          features,
+          meaning: m,
+          outputSkeleton: rec.skeleton
+        })
+      } catch {
+        // non-fatal
+      }
+
+      setStatus({ kind: 'ok', text: `OK: ${m.intent} (${Math.round(m.confidence * 100)}%)` })
     } catch (e: any) {
-      setStatus(`API failed: ${e?.message ?? String(e)}`)
-    } finally {
-      setBusy(false)
+      setStatus({ kind: 'error', text: e?.message ?? String(e) })
     }
   }
 
-  const activeSkeleton =
-    viewSource === 'loaded'
-      ? loadedSession?.inputSkeleton ?? null
-      : viewSource === 'template'
-        ? loadedTemplate?.skeletonClip ?? null
-        : recorded
+  function onLoadSession(payload: any) {
+    const sk = payload?.inputSkeleton as Skeleton | undefined
+    if (sk && sk.frames?.length) {
+      setInputSkeleton(sk)
+      setActiveSessionId(payload?.sessionId)
+      setStatus({ kind: 'ok', text: `Session loaded: ${String(payload?.sessionId).slice(0, 8)}` })
+    }
+  }
 
-  const activeId =
-    viewSource === 'loaded'
-      ? loadedSession?.sessionId
-      : viewSource === 'template'
-        ? loadedTemplate?.templateId
-        : undefined
+  function onLoadRun(payload: any) {
+    const m = payload?.meaning as Meaning | undefined
+    const out = payload?.outputSkeleton as Skeleton | undefined
+    if (m) setMeaning(m)
+    if (out) setOutputSkeleton(out)
+    setSelectedTemplateId(payload?.selectedTemplateId ?? null)
+    setStatus({ kind: 'ok', text: `Run loaded: ${String(payload?.runId).slice(0, 8)}` })
+  }
 
-  const filenameStem =
-    viewSource === 'loaded'
-      ? loadedSession?.sessionId
-      : viewSource === 'template'
-        ? `template_${loadedTemplate?.templateId?.slice(0, 8) ?? 'x'}`
-        : 'recorded'
+  function acceptConsent() {
+    localStorage.setItem('limen_consent_v1', '1')
+    setConsent(true)
+  }
 
   return (
     <>
+      <ConsentModal open={!consent} onAccept={acceptConsent} />
+
       <header>
         <div className="header-left">
           <div className="title">LIMEN</div>
-          <div className="subtitle">Stage 3 — Templates / Replay / Export</div>
+          <div className="subtitle">Stage4–6 MVP: meaning → template → reconstruct</div>
         </div>
 
         <div className="toolbar">
-          <label className="note">
-            SRC&nbsp;
-            <select value={sourceLanguage} onChange={(e) => setSourceLanguage(e.target.value as Language)}>
-              <option value="JSL">JSL</option>
-              <option value="ASL">ASL</option>
-              <option value="CSL">CSL</option>
-            </select>
-          </label>
+          <select value={sourceLanguage} onChange={(e) => setSourceLanguage(e.target.value as Language)}>
+            <option value="JSL">JSL</option>
+            <option value="ASL">ASL</option>
+            <option value="CSL">CSL</option>
+          </select>
+          <span className="badge">→</span>
+          <select value={targetLanguage} onChange={(e) => setTargetLanguage(e.target.value as Language)}>
+            <option value="JSL">JSL</option>
+            <option value="ASL">ASL</option>
+            <option value="CSL">CSL</option>
+          </select>
 
-          <label className="note">
-            TGT&nbsp;
-            <select value={targetLanguage} onChange={(e) => setTargetLanguage(e.target.value as Language)}>
-              <option value="JSL">JSL</option>
-              <option value="ASL">ASL</option>
-              <option value="CSL">CSL</option>
-            </select>
-          </label>
-
-          <button onClick={onDummy} className="primary" disabled={busy}>
-            Dummy
+          <button className="primary" onClick={runPipeline} disabled={!canRun || status.kind === 'busy'}>
+            RUN
           </button>
 
-          <button onClick={onApi} disabled={busy}>
-            API
-          </button>
+          <span className="badge">{status.text}</span>
         </div>
       </header>
 
       <main>
-        <div className="note">{status}</div>
-
-        <div className="grid" style={{ marginTop: 10 }}>
-          <Panel title="Input" badge="Stage1: capture / Stage2: replay / Stage3: templates">
+        <div className="grid">
+          <Panel title="Input" badge={inputSkeleton ? `${inputSkeleton.frames.length}f` : '—'}>
             <InputCapture
               sourceLanguage={sourceLanguage}
               targetLanguage={targetLanguage}
               apiBase={API_BASE}
-              onRecorded={(s) => {
-                setRecorded(s)
-                setViewSource('recorded')
+              onRecorded={(sk) => {
+                if (sk) {
+                  setInputSkeleton(sk)
+                  setActiveSessionId(undefined)
+                }
               }}
             />
 
-            <div className="split" style={{ marginTop: 10 }}>
-              <div>
-                <div className="row" style={{ marginBottom: 8, gap: 8 }}>
-                  <div className="helper">Replay / Export</div>
-                  <div className="spacer" />
-                  <button
-                    className={viewSource === 'recorded' ? 'tab active' : 'tab'}
-                    onClick={() => setViewSource('recorded')}
-                    disabled={!recorded}
-                  >
-                    REC
-                  </button>
-                  <button
-                    className={viewSource === 'loaded' ? 'tab active' : 'tab'}
-                    onClick={() => setViewSource('loaded')}
-                    disabled={!loadedSession}
-                  >
-                    LOAD
-                  </button>
-                  <button
-                    className={viewSource === 'template' ? 'tab active' : 'tab'}
-                    onClick={() => setViewSource('template')}
-                    disabled={!loadedTemplate}
-                  >
-                    TPL
-                  </button>
-                </div>
+            <div className="split" style={{ marginTop: 12 }}>
+              <SessionBrowser apiBase={API_BASE} onLoad={onLoadSession} />
+              <RunBrowser apiBase={API_BASE} onLoadRun={onLoadRun} />
+            </div>
 
-                <SessionViewer
-                  title={
-                    viewSource === 'template'
-                      ? `TPL: ${loadedTemplate?.intent ?? ''}`
-                      : viewSource === 'loaded'
-                        ? 'LOAD Session'
-                        : 'REC Buffer'
-                  }
-                  sessionId={activeId}
-                  skeleton={activeSkeleton}
-                  filenameStem={filenameStem}
-                  apiBase={API_BASE}
-                  defaultTemplateLanguage={sourceLanguage}
-                  templateSourceKind={viewSource}
-                  onTemplateSaved={() => {
-                    setTemplateRefresh((x) => x + 1)
-                    setStatus('TPL saved')
-                  }}
-                />
-              </div>
-
-              <div>
-                <SessionBrowser
-                  apiBase={API_BASE}
-                  onLoad={(session) => {
-                    setLoadedSession(session)
-                    setViewSource('loaded')
-                    setStatus(`LOAD session: ${session?.sessionId ?? ''}`)
-                  }}
-                />
-
-                <div style={{ marginTop: 10 }}>
-                  <TemplateBrowser
-                    apiBase={API_BASE}
-                    refreshSignal={templateRefresh}
-                    onLoad={(tpl) => {
-                      setLoadedTemplate(tpl)
-                      setViewSource('template')
-                      setStatus(`LOAD template: ${tpl.templateId.slice(0, 8)}… (${tpl.language} / ${tpl.intent})`)
-                    }}
-                  />
-                </div>
-              </div>
+            <div style={{ marginTop: 12 }}>
+              <SessionViewer
+                apiBase={API_BASE}
+                skeleton={inputSkeleton}
+                defaultTemplateLanguage={targetLanguage}
+                title="Active"
+              />
             </div>
           </Panel>
 
-          <Panel title="Meaning Layer" badge="Stage4: intent + params">
+          <Panel
+            title="Meaning"
+            badge={meaning ? `${meaning.intent} · ${Math.round(meaning.confidence * 100)}%` : features ? 'features ok' : '—'}
+          >
             <MeaningView meaning={meaning} />
-            <div className="footer">
-              <div className="note">API Base: {API_BASE}</div>
-            </div>
+
+            {features ? (
+              <div className="template-panel" style={{ marginTop: 12 }}>
+                <div className="kv">
+                  <div className="k">dur</div>
+                  <div className="v">{features.motion.durationSec.toFixed(2)}s</div>
+                </div>
+                <div className="kv">
+                  <div className="k">speed</div>
+                  <div className="v">{features.motion.avgSpeed.toFixed(3)}</div>
+                </div>
+                <div className="kv">
+                  <div className="k">hands</div>
+                  <div className="v">{Math.round(features.hands.bothHandsRatio * 100)}% both</div>
+                </div>
+              </div>
+            ) : (
+              <div className="note">Record or load a session to compute features.</div>
+            )}
           </Panel>
 
-          <Panel title="Output" badge="Stage5: meaning → re-encode">
-            <SkeletonCanvas skeleton={outputSkeleton} label="dummy output skeleton" />
-            <div className="helper">Stage0では出力もダミー。Stage5でテンプレ選択＋補正で再構成を入れる。</div>
+          <Panel title="Output" badge={selectedTemplateId ? `tpl ${String(selectedTemplateId).slice(0, 6)}…` : '—'}>
+            <SessionViewer apiBase={API_BASE} skeleton={outputSkeleton} defaultTemplateLanguage={targetLanguage} title="Output" />
+
+            <div style={{ marginTop: 12 }}>
+              <TemplateBrowser apiBase={API_BASE} onLoadTemplate={(tpl: any) => {
+                const clip = tpl?.skeletonClip as Skeleton | undefined
+                if (clip && clip.frames?.length) {
+                  setOutputSkeleton(clip)
+                  setStatus({ kind: 'ok', text: `Template loaded` })
+                }
+              }} />
+            </div>
           </Panel>
         </div>
       </main>

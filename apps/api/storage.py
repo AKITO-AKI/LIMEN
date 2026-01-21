@@ -49,10 +49,28 @@ def ensure_db() -> None:
             """
         )
         conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS runs (
+              run_id TEXT PRIMARY KEY,
+              created_at TEXT,
+              source_language TEXT,
+              target_language TEXT,
+              source_session_id TEXT,
+              selected_template_id TEXT,
+              intent TEXT,
+              confidence REAL,
+              payload_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at);"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_templates_created_at ON templates(created_at);"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at);"
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_templates_language_intent ON templates(language, intent);"
@@ -312,12 +330,160 @@ def list_templates(limit: int = 50, offset: int = 0, language: str = "") -> List
         conn.close()
 
 
+def find_latest_template(language: str, intent: str) -> Optional[str]:
+    """Return latest template_id for (language, intent), if any."""
+
+    language = str(language or '').strip()
+    intent = str(intent or '').strip()
+    if not language or not intent:
+        return None
+
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            """
+            SELECT template_id
+            FROM templates
+            WHERE language=? AND intent=?
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT 1
+            """,
+            (language, intent),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
 def get_template(template_id: str) -> Optional[Dict[str, Any]]:
     conn = _conn()
     try:
         cur = conn.execute(
             "SELECT payload_json FROM templates WHERE template_id=?",
             (template_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return None
+    finally:
+        conn.close()
+
+
+# --- Runs (Stage4+) ---
+
+
+def save_run(payload: Dict[str, Any]) -> str:
+    """Insert or replace a run payload.
+
+    A run represents one end-to-end inference + reconstruction attempt.
+    """
+
+    run_id = str(payload.get("runId") or "").strip()
+    if not run_id:
+        run_id = uuid.uuid4().hex
+        payload["runId"] = run_id
+
+    created_at = str(payload.get("createdAt") or "")
+    source_language = str(payload.get("sourceLanguage") or "")
+    target_language = str(payload.get("targetLanguage") or "")
+    source_session_id = str(payload.get("sourceSessionId") or "")
+    selected_template_id = str(payload.get("selectedTemplateId") or "")
+
+    meaning = payload.get("meaning") if isinstance(payload.get("meaning"), dict) else {}
+    intent = str(meaning.get("intent") or "")
+    try:
+        confidence = float(meaning.get("confidence"))
+    except Exception:
+        confidence = 0.0
+
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+    conn = _conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO runs (
+              run_id, created_at, source_language, target_language,
+              source_session_id, selected_template_id,
+              intent, confidence,
+              payload_json
+            ) VALUES (?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(run_id) DO UPDATE SET
+              created_at=excluded.created_at,
+              source_language=excluded.source_language,
+              target_language=excluded.target_language,
+              source_session_id=excluded.source_session_id,
+              selected_template_id=excluded.selected_template_id,
+              intent=excluded.intent,
+              confidence=excluded.confidence,
+              payload_json=excluded.payload_json
+            """,
+            (
+                run_id,
+                created_at,
+                source_language,
+                target_language,
+                source_session_id,
+                selected_template_id,
+                intent,
+                confidence,
+                raw,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return run_id
+
+
+def list_runs(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    limit = max(1, min(int(limit), 200))
+    offset = max(0, int(offset))
+
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            """
+            SELECT run_id, created_at, source_language, target_language,
+                   source_session_id, selected_template_id,
+                   intent, confidence
+            FROM runs
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+        items: List[Dict[str, Any]] = []
+        for row in cur.fetchall():
+            items.append(
+                {
+                    "runId": row[0],
+                    "createdAt": row[1],
+                    "sourceLanguage": row[2],
+                    "targetLanguage": row[3],
+                    "sourceSessionId": row[4],
+                    "selectedTemplateId": row[5],
+                    "intent": row[6],
+                    "confidence": row[7],
+                }
+            )
+        return items
+    finally:
+        conn.close()
+
+
+def get_run(run_id: str) -> Optional[Dict[str, Any]]:
+    conn = _conn()
+    try:
+        cur = conn.execute(
+            "SELECT payload_json FROM runs WHERE run_id=?",
+            (run_id,),
         )
         row = cur.fetchone()
         if not row:
